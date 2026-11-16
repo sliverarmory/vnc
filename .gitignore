@@ -1,0 +1,8 @@
+source-assets/
+dist/
+__pycache__/
+*.pyc
+minisign.key
+vnc.minisig
+downloaded-assets/
+unpacked/

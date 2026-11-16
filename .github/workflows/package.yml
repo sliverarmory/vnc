@@ -1,0 +1,183 @@
+name: Build and publish vnc package
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vnc-package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Verify source and unsigned package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      package_tag: ${{ steps.version.outputs.package_tag }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Select and validate package version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" = tag ]]; then
+            package_tag="$GITHUB_REF_NAME"
+            test "$(git cat-file -t "refs/tags/$package_tag")" = tag
+            test "$(git rev-parse "refs/tags/$package_tag^{commit}")" = "$GITHUB_SHA"
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+          else
+            package_tag=v0.0.1
+          fi
+          [[ "$package_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          printf 'package_tag=%s\n' "$package_tag" >> "$GITHUB_OUTPUT"
+      - name: Download pinned desktop release assets
+        shell: bash
+        run: |
+          source_tag=$(python3 -c 'import json; print(json.load(open("source.json"))["tag"])')
+          gh release download "$source_tag" --repo sliverarmory/libvncserver --dir source-assets
+      - name: Build and inspect unsigned Armory archive
+        shell: bash
+        run: |
+          python3 scripts/build_package.py --assets source-assets --out dist --tag '${{ steps.version.outputs.package_tag }}'
+          tar -tzf dist/vnc.tar.gz
+          python3 scripts/check_archive.py dist/vnc.tar.gz '${{ steps.version.outputs.package_tag }}'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vnc-unsigned-${{ github.sha }}
+          path: dist/vnc.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  loader-smoke:
+    name: Reflektor loader ${{ matrix.name }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-24.04, name: linux-amd64, library: bin/linux-amd64/libvncdesktop.so}
+          - {runner: ubuntu-24.04-arm, name: linux-arm64, library: bin/linux-arm64/libvncdesktop.so}
+          - {runner: macos-15-intel, name: darwin-amd64, library: bin/darwin-amd64/libvncdesktop.dylib}
+          - {runner: macos-15, name: darwin-arm64, library: bin/darwin-arm64/libvncdesktop.dylib}
+          - {runner: windows-2022, name: windows-amd64, library: bin/windows-amd64/vncdesktop.dll}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vnc-unsigned-${{ github.sha }}
+          path: dist
+      - name: Install Linux runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1 libxcb-xtest0
+      - name: Load exact package library and call Sliver export
+        run: |
+          mkdir -p unpacked
+          tar -xzf dist/vnc.tar.gz -C unpacked
+          CGO_ENABLED=0 go run -buildvcs=false -mod=readonly ./tools/loader_smoke \
+            "unpacked/${{ matrix.library }}"
+
+  publish:
+    name: Sign, verify, and publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, loader-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.build.outputs.package_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vnc-unsigned-${{ github.sha }}
+          path: dist
+      - name: Install signing verifier
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          minisign -v
+      - name: Sign exact packaged manifest
+        shell: bash
+        env:
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+        run: |
+          set +x
+          test -n "$MINISIGN_PRIVATE_KEY"
+          key="$RUNNER_TEMP/vnc-minisign.key"
+          umask 077
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$MINISIGN_PRIVATE_KEY" > "$key"
+          manifest_b64=$(tar -xOzf dist/vnc.tar.gz ./extension.json | base64 -w0)
+          minisign -S -W -s "$key" -m dist/vnc.tar.gz -x dist/vnc.minisig -t "$manifest_b64"
+          minisign -V -q -p minisign.pub -m dist/vnc.tar.gz -x dist/vnc.minisig
+          python3 scripts/check_archive.py dist/vnc.tar.gz "$RELEASE_TAG" --signature dist/vnc.minisig
+      - name: Write release notes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          source = json.loads(Path('source.json').read_text())
+          notes = (f"Sliver Armory vnc package {os.environ['RELEASE_TAG']}\n\n"
+                   f"Built from https://github.com/{source['repository']}/releases/tag/{source['tag']} "
+                   f"at source commit `{source['commit']}`.\n\n"
+                   "Assets: `vnc.tar.gz` and `vnc.minisig`. The signature's trusted comment "
+                   "contains the exact packaged extension manifest.\n")
+          Path('release-notes.md').write_text(notes)
+          PY
+      - name: Create verified draft and publish
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to replace its assets' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" dist/vnc.tar.gz dist/vnc.minisig \
+            --verify-tag --target "$GITHUB_SHA" --draft \
+            --title "vnc $RELEASE_TAG" --notes-file release-notes.md
+          gh release download "$RELEASE_TAG" --dir downloaded-assets
+          cmp dist/vnc.tar.gz downloaded-assets/vnc.tar.gz
+          cmp dist/vnc.minisig downloaded-assets/vnc.minisig
+          minisign -V -q -p minisign.pub -m downloaded-assets/vnc.tar.gz \
+            -x downloaded-assets/vnc.minisig
+          python3 scripts/check_archive.py downloaded-assets/vnc.tar.gz "$RELEASE_TAG" \
+            --signature downloaded-assets/vnc.minisig
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,tagName,assets > published-release.json
+          jq -e --arg tag "$RELEASE_TAG" \
+            '.isDraft == false and .isPrerelease == false and .tagName == $tag and ([.assets[].name] | sort) == ["vnc.minisig", "vnc.tar.gz"]' \
+            published-release.json
