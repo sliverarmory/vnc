@@ -1,0 +1,25 @@
+{
+  "name": "vnc",
+  "package_name": "vnc",
+  "version": "v0.0.0",
+  "extension_author": "Sliver Armory",
+  "original_author": "LibVNCServer contributors",
+  "repo_url": "https://github.com/sliverarmory/vnc",
+  "commands": [
+    {
+      "command_name": "vnc",
+      "help": "Share the target desktop through a loopback VNC listener.",
+      "long_help": "Commands: vnc start --port <1-65535>; vnc status; vnc stop. The listener binds 127.0.0.1 on the target and has no VNC password. Use an interactive session port forward to connect a viewer. Stop the server before updating the package.",
+      "entrypoint": "VNCDesktopCommand",
+      "init": "",
+      "arguments": [],
+      "files": [
+        {"os": "linux", "arch": "amd64", "path": "bin/linux-amd64/libvncdesktop.so"},
+        {"os": "linux", "arch": "arm64", "path": "bin/linux-arm64/libvncdesktop.so"},
+        {"os": "darwin", "arch": "amd64", "path": "bin/darwin-amd64/libvncdesktop.dylib"},
+        {"os": "darwin", "arch": "arm64", "path": "bin/darwin-arm64/libvncdesktop.dylib"},
+        {"os": "windows", "arch": "amd64", "path": "bin/windows-amd64/vncdesktop.dll"}
+      ]
+    }
+  ]
+}
