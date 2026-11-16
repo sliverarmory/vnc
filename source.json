@@ -1,6 +1,6 @@
 {
   "repository": "sliverarmory/libvncserver",
-  "tag": "desktop-v0.1.1",
-  "commit": "2353be87e122ef55a9121fa22a395e00323ce89a",
-  "sha256sums_sha256": "0c7af6de6a166159624ccf2ccd95febe178c44e13800978eeb62dc317a68c1d5"
+  "tag": "desktop-v0.1.2",
+  "commit": "749ef7cfc69b50febc8c6cab92cef87dda2c8955",
+  "sha256sums_sha256": "bb88b0326a63a2ac9d6c25dfa299af4cfb119c6ca371ec74e1629dd2e2d7bd0f"
 }

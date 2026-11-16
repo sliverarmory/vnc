@@ -31,7 +31,7 @@ It stages only the Sliver manifest, the five shared libraries, the upstream
 GPL license, and the runtime guide.
 
 ```sh
-gh release download desktop-v0.1.1 --repo sliverarmory/libvncserver --dir source-assets
+gh release download desktop-v0.1.2 --repo sliverarmory/libvncserver --dir source-assets
 python3 scripts/build_package.py --assets source-assets --out dist --tag v0.0.1
 ```
 
