@@ -1,0 +1,367 @@
+# Each suite uses the exact library extracted from the package CI archive.
+# The action invokes the native export through live Sliver session and beacon implants.
+schema: sliver-ext-e2e/v1
+
+sliver:
+  version: v1.7.9
+
+defaults:
+  modes: [session, beacon]
+  repeat: 1
+  command_timeout: 2m
+
+suites:
+  - name: linux-amd64
+    target: {os: linux, arch: amd64}
+    tests:
+      - name: command-contract
+        library: unpacked/bin/linux-amd64/libvncdesktop.so
+        export: VNCDesktopCommand
+        steps:
+          - name: initial-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+          - name: reject-zero-port
+            args_utf8: 'start --port 0'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-overflow-port
+            args_utf8: 'start --port 65536'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-nondecimal-port
+            args_utf8: 'start --port 12x'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: usage
+            args_utf8: start
+            expect:
+              output:
+                equals: "Usage: vnc start --port <1-65535> | vnc status | vnc stop\n"
+          - name: idle-stop
+            args_utf8: stop
+            expect:
+              output:
+                equals: "VNC stopped\n"
+          - name: final-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+      - name: desktop-lifecycle
+        library: unpacked/bin/linux-amd64/libvncdesktop.so
+        export: VNCDesktopCommand
+        steps:
+          - name: start
+            args_utf8: 'start --port ${TCP_PORT}'
+            expect:
+              output:
+                contains: ['VNC listening on 127.0.0.1:']
+            tcp_probe:
+              port: auto
+              state: open
+              timeout: 10s
+              banner_utf8: "RFB 003.008\n"
+            command_probe:
+              path: tests/rfb_probe.py
+              args: ['--port', '${TCP_PORT}', '--expect-rgb', '336699']
+              timeout: 20s
+          - name: running-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC running; last status 0 (no error recorded)\n"
+          - name: duplicate-start
+            args_utf8: 'start --port ${TCP_PORT}'
+            expect:
+              output:
+                equals: "VNC start failed (-2): already running; stop before restarting\n"
+            tcp_probe:
+              port: auto
+              state: open
+              timeout: 10s
+              banner_utf8: "RFB 003.008\n"
+          - name: stop
+            args_utf8: stop
+            expect:
+              output:
+                equals: "VNC stopped\n"
+            tcp_probe:
+              port: auto
+              state: closed
+              timeout: 10s
+          - name: stopped-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+          - name: restart
+            args_utf8: 'start --port ${TCP_PORT}'
+            expect:
+              output:
+                contains: ['VNC listening on 127.0.0.1:']
+            tcp_probe:
+              port: auto
+              state: open
+              timeout: 10s
+              banner_utf8: "RFB 003.008\n"
+            command_probe:
+              path: tests/rfb_probe.py
+              args: ['--port', '${TCP_PORT}', '--expect-rgb', '336699']
+              timeout: 20s
+          - name: stop-again
+            args_utf8: stop
+            expect:
+              output:
+                equals: "VNC stopped\n"
+            tcp_probe:
+              port: auto
+              state: closed
+              timeout: 10s
+
+  - name: linux-arm64
+    target: {os: linux, arch: arm64}
+    tests:
+      - name: command-contract
+        library: unpacked/bin/linux-arm64/libvncdesktop.so
+        export: VNCDesktopCommand
+        steps:
+          - name: initial-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+          - name: reject-zero-port
+            args_utf8: 'start --port 0'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-overflow-port
+            args_utf8: 'start --port 65536'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-nondecimal-port
+            args_utf8: 'start --port 12x'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: usage
+            args_utf8: start
+            expect:
+              output:
+                equals: "Usage: vnc start --port <1-65535> | vnc status | vnc stop\n"
+          - name: idle-stop
+            args_utf8: stop
+            expect:
+              output:
+                equals: "VNC stopped\n"
+          - name: final-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+      - name: desktop-lifecycle
+        library: unpacked/bin/linux-arm64/libvncdesktop.so
+        export: VNCDesktopCommand
+        steps:
+          - name: start
+            args_utf8: 'start --port ${TCP_PORT}'
+            expect:
+              output:
+                contains: ['VNC listening on 127.0.0.1:']
+            tcp_probe:
+              port: auto
+              state: open
+              timeout: 10s
+              banner_utf8: "RFB 003.008\n"
+            command_probe:
+              path: tests/rfb_probe.py
+              args: ['--port', '${TCP_PORT}', '--expect-rgb', '336699']
+              timeout: 20s
+          - name: running-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC running; last status 0 (no error recorded)\n"
+          - name: duplicate-start
+            args_utf8: 'start --port ${TCP_PORT}'
+            expect:
+              output:
+                equals: "VNC start failed (-2): already running; stop before restarting\n"
+            tcp_probe:
+              port: auto
+              state: open
+              timeout: 10s
+              banner_utf8: "RFB 003.008\n"
+          - name: stop
+            args_utf8: stop
+            expect:
+              output:
+                equals: "VNC stopped\n"
+            tcp_probe:
+              port: auto
+              state: closed
+              timeout: 10s
+          - name: stopped-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+          - name: restart
+            args_utf8: 'start --port ${TCP_PORT}'
+            expect:
+              output:
+                contains: ['VNC listening on 127.0.0.1:']
+            tcp_probe:
+              port: auto
+              state: open
+              timeout: 10s
+              banner_utf8: "RFB 003.008\n"
+            command_probe:
+              path: tests/rfb_probe.py
+              args: ['--port', '${TCP_PORT}', '--expect-rgb', '336699']
+              timeout: 20s
+          - name: stop-again
+            args_utf8: stop
+            expect:
+              output:
+                equals: "VNC stopped\n"
+            tcp_probe:
+              port: auto
+              state: closed
+              timeout: 10s
+
+  - name: darwin-amd64
+    target: {os: darwin, arch: amd64}
+    tests:
+      - name: command-contract
+        library: unpacked/bin/darwin-amd64/libvncdesktop.dylib
+        export: VNCDesktopCommand
+        steps:
+          - name: initial-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+          - name: reject-zero-port
+            args_utf8: 'start --port 0'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-overflow-port
+            args_utf8: 'start --port 65536'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-nondecimal-port
+            args_utf8: 'start --port 12x'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: usage
+            args_utf8: start
+            expect:
+              output:
+                equals: "Usage: vnc start --port <1-65535> | vnc status | vnc stop\n"
+          - name: idle-stop
+            args_utf8: stop
+            expect:
+              output:
+                equals: "VNC stopped\n"
+          - name: final-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+
+  - name: darwin-arm64
+    target: {os: darwin, arch: arm64}
+    tests:
+      - name: command-contract
+        library: unpacked/bin/darwin-arm64/libvncdesktop.dylib
+        export: VNCDesktopCommand
+        steps:
+          - name: initial-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+          - name: reject-zero-port
+            args_utf8: 'start --port 0'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-overflow-port
+            args_utf8: 'start --port 65536'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-nondecimal-port
+            args_utf8: 'start --port 12x'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: usage
+            args_utf8: start
+            expect:
+              output:
+                equals: "Usage: vnc start --port <1-65535> | vnc status | vnc stop\n"
+          - name: idle-stop
+            args_utf8: stop
+            expect:
+              output:
+                equals: "VNC stopped\n"
+          - name: final-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+
+  - name: windows-amd64
+    target: {os: windows, arch: amd64}
+    tests:
+      - name: command-contract
+        library: unpacked/bin/windows-amd64/vncdesktop.dll
+        export: VNCDesktopCommand
+        steps:
+          - name: initial-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"
+          - name: reject-zero-port
+            args_utf8: 'start --port 0'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-overflow-port
+            args_utf8: 'start --port 65536'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: reject-nondecimal-port
+            args_utf8: 'start --port 12x'
+            expect:
+              output:
+                equals: "Invalid port; use vnc start --port <1-65535>\n"
+          - name: usage
+            args_utf8: start
+            expect:
+              output:
+                equals: "Usage: vnc start --port <1-65535> | vnc status | vnc stop\n"
+          - name: idle-stop
+            args_utf8: stop
+            expect:
+              output:
+                equals: "VNC stopped\n"
+          - name: final-status
+            args_utf8: status
+            expect:
+              output:
+                equals: "VNC stopped; last status 0 (no error recorded)\n"

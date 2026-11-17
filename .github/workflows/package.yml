@@ -103,10 +103,98 @@ jobs:
           CGO_ENABLED=0 go run -buildvcs=false -mod=readonly ./tools/loader_smoke \
             "unpacked/${{ matrix.library }}"
 
+  sliver-e2e:
+    name: Sliver extension ${{ matrix.name }}
+    if: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v') }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-24.04, name: linux-amd64, target: linux/amd64, library: bin/linux-amd64/libvncdesktop.so}
+          - {runner: ubuntu-24.04-arm, name: linux-arm64, target: linux/arm64, library: bin/linux-arm64/libvncdesktop.so}
+          - {runner: macos-15-intel, name: darwin-amd64, target: darwin/amd64, library: bin/darwin-amd64/libvncdesktop.dylib}
+          - {runner: macos-15, name: darwin-arm64, target: darwin/arm64, library: bin/darwin-arm64/libvncdesktop.dylib}
+          - {runner: windows-2022, name: windows-amd64, target: windows/amd64, library: bin/windows-amd64/vncdesktop.dll}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vnc-unsigned-${{ github.sha }}
+          path: dist
+      - name: Extract candidate package
+        run: |
+          mkdir -p unpacked
+          tar -xzf dist/vnc.tar.gz -C unpacked
+          test -f unpacked/extension.json
+          test -f "unpacked/${{ matrix.library }}"
+      - name: Prepare authenticated Xvfb desktop
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1 libxcb-xtest0 xvfb xauth x11-utils x11-xserver-utils
+          auth="$RUNNER_TEMP/vnc-xauthority"
+          umask 077
+          touch "$auth"
+          xauth -f "$auth" add :99 . "$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+          nohup Xvfb :99 -screen 0 1024x768x24 -nolisten tcp -auth "$auth" \
+            > "$RUNNER_TEMP/vnc-xvfb.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/vnc-xvfb.pid"
+          ready=0
+          for attempt in {1..40}; do
+            if DISPLAY=:99 XAUTHORITY="$auth" xdpyinfo >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 0.25
+          done
+          if [[ "$ready" != 1 ]]; then
+            cat "$RUNNER_TEMP/vnc-xvfb.log"
+            exit 1
+          fi
+          DISPLAY=:99 XAUTHORITY="$auth" xsetroot -solid '#336699'
+          test -x tests/rfb_probe.py
+          printf 'DISPLAY=:99\nXAUTHORITY=%s\n' "$auth" >> "$GITHUB_ENV"
+      - name: Run live Sliver session and beacon tests
+        id: e2e
+        uses: sliverarmory/sliver-test-ext@03315b8abd31968534516dd044064b21df890531 # v0.1.1
+        with:
+          manifest: .github/sliver-ext-e2e.yml
+          target: ${{ matrix.target }}
+          github-token: ${{ github.token }}
+      - name: Upload Sliver results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vnc-sliver-e2e-${{ matrix.name }}-${{ github.sha }}
+          path: .sliver-ext-e2e/results
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Stop Xvfb desktop
+        if: ${{ always() && runner.os == 'Linux' }}
+        run: |
+          if [[ -f "$RUNNER_TEMP/vnc-xvfb.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/vnc-xvfb.pid")" 2>/dev/null || true
+          fi
+          rm -f "$RUNNER_TEMP/vnc-xauthority" "$RUNNER_TEMP/vnc-xvfb.pid"
+
   publish:
     name: Sign, verify, and publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, loader-smoke]
+    needs: [build, loader-smoke, sliver-e2e]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release
