@@ -46,8 +46,15 @@ durable secret manager, never in Git.
 Before publication, CI loads each of the five packaged libraries through
 Reflektor's in-memory native loader and calls `VNCDesktopCommand` with `status`
 and an invalid port. This checks the package's loader, argument, and callback
-ABI without opening a listener. The upstream desktop workflow tests the VNC
-protocol and desktop backends separately.
+ABI without opening a listener. CI also runs the packaged libraries through
+live Sliver session and beacon implants on all five targets using
+[`sliver-test-ext`](https://github.com/sliverarmory/sliver-test-ext). The
+[test manifest](.github/sliver-ext-e2e.yml) checks command responses on every
+target. Linux amd64 and arm64 jobs use Xvfb to verify start, status, duplicate
+start, stop, restart, loopback binding, and an RFB framebuffer update. The
+release job waits for both loader and live extension tests. These live tests
+call the native extension through Sliver RPCs; the archive and signature checks
+cover package installation metadata separately.
 
 Armory's index reads this repository's latest non-prerelease release. Keep the
 asset names and manifest command stable across future releases. The package
