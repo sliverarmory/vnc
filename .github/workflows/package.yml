@@ -150,7 +150,7 @@ jobs:
           umask 077
           touch "$auth"
           xauth -f "$auth" add :99 . "$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
-          nohup Xvfb :99 -screen 0 1024x768x24 -nolisten tcp -auth "$auth" \
+          nohup Xvfb :99 -screen 0 1024x768x24 -nolisten tcp -noreset -auth "$auth" \
             > "$RUNNER_TEMP/vnc-xvfb.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/vnc-xvfb.pid"
           ready=0
